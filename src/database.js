@@ -93,6 +93,11 @@ SELECT * FROM RESPONSES;
      * @returns {Promise<Boolean>} ID exists
      */
      static async #idExists(id) {
+        var con = mysql.createConnection({
+            host: "localhost",
+            user: "yourusername",
+            password: "yourpassword"
+        });
         // TODO!!!
         // await this.connection.query()
         return false;
