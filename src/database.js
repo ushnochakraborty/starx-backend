@@ -8,129 +8,121 @@
 
 const mariadb = require("mariadb");
 
-/*
+class Database {
 
--- create
-CREATE TABLE UIDLOOKUP (
-  uid INTEGER PRIMARY KEY AUTO_INCREMENT,
-  pin SMALLINT NOT NULL
-);
-
-CREATE TABLE RESPONSES (
-  recordId INTEGER PRIMARY KEY AUTO_INCREMENT,
-  uid INTEGER,
-  foreign key (uid) references UIDLOOKUP(uid),
-  q1 TINYINT NOT NULL,
-  q2 TINYINT NOT NULL,
-  q3 TINYINT NOT NULL,
-  q4 TINYINT NOT NULL,
-  q5 TINYINT NOT NULL,
-  q6 TINYINT NOT NULL,
-  q7 TINYINT NOT NULL,
-  q8 TINYINT NOT NULL,
-  q9 TINYINT NOT NULL,
-  q10 TINYINT NOT NULL,
-  q11 TINYINT NOT NULL,
-  q12 TINYINT NOT NULL,
-  q13 TINYINT NOT NULL,
-  q14 TINYINT NOT NULL,
-  q15 TINYINT NOT NULL,
-  q16 TINYINT NOT NULL,
-  q17 TINYINT NOT NULL,
-  q18 TINYINT NOT NULL
-);
-
--- insert
-INSERT INTO UIDLOOKUP VALUES (1, 1234);
-INSERT INTO UIDLOOKUP VALUES (2, 1234);
-INSERT INTO UIDLOOKUP VALUES (3, 4321);
-INSERT INTO UIDLOOKUP VALUES (4, 1111);
-INSERT INTO RESPONSES VALUES (1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
-
--- fetch 
-SELECT * FROM UIDLOOKUP;
-SELECT * FROM RESPONSES;
-
-*/
-
- class Database {
-    static isConnected = false;
     /**
      * @type {mariadb.Pool}
      */
-    static pool = null;
+    static #pool = null;
     /**
      * @type {mariadb.PoolConnection}
      */
-    static connection = null;
+    static #connection = null;
+
+    static #connectionConfig = {
+        host: "",
+        port: "",
+        user: "",
+        password: "",
+    }
+
+    static setConnectionConfig(host, port, user, password) {
+        if (this.#pool) {
+            this.#pool.end();
+        }
+        this.#connectionConfig = {
+            host: "localhost",
+            port: port,
+            user: "root",
+            password: password,
+            connectionLimit: 1
+        }
+        this.#pool = mariadb.createPool(this.#connectionConfig);
+    }
 
     /**
-     * 
-     * @param {String} host 
-     * @param {String} user 
-     * @param {String} password 
      * @returns {Promise<Boolean>} connected
      */
-    static async connect(host, user, password) {
-        if (this.isConnected) return;
-        this.pool = mariadb.createPool({
-            host: host,
-            user: user,
-            password: password,
-            connectionLimit: 2
-        });
-        connection = await this.pool.getConnection().catch(e => {
-            console.error("DB connection error: " + e);
+    static async #connect() {
+        try {
+            this.#connection = await this.#pool.getConnection();
+            this.#connection.query("USE starx");
+            return true;
+        } catch(e) {
+            console.error("Database connection error: " + e);
+            this.#connection = null;
             return false;
-        });
-        this.isConnected = true;
-        return true;
+        }
     }
 
     /**
      * 
-     * @param {Number} id 
+     * @param {Number} uid 
      * @returns {Promise<Boolean>} ID exists
      */
-     static async #idExists(id) {
-        return result = await this.connection.query("SELECT EXISTS(SELECT * from uidlookup WHERE uid=" + id + ")");
+    static async #idExists(uid) {
+        let res = await this.#connection.query(`SELECT EXISTS(SELECT * FROM users WHERE uid ='${uid}') AS result`);
+        return (res[0].result == 1) ? true : false;
+    }
+
+    /**
+     * 
+     * @param {Number} uid 
+     * @param {Number} pin 
+     * @returns {Promise<Boolean>} Authentication correct
+     */
+    static async #isAuth(uid, pin) {
+        let res = await this.#connection.query(`SELECT EXISTS(SELECT * FROM users WHERE uid = ${uid} AND pin = ${pin}) AS result`);
+        return (res[0].result == 1) ? true : false;
     }
 
     /**
      * 
      * @param {SurveyData} results
-     * @returns {Promise<Number | Boolean>} ID
+     * @returns {Promise<{uid: Number, pin: Number}>} ID
      */
-    static async upload(results) {
-        if (!this.isConnected) return null;
-
-        if (results.id) {
-            if (!(await this.#idExists(id))) return false;
-        } else {
-            let id = 0;
-            do {
-                id = Math.floor(Math.random() * 0xffffff);
-            } while (!(await this.#idExists(id)));
-            results.id = id;
-        }
+    static async uploadNew(results) {
+        if (!(await this.#connect())) return;
+        let uid = 0;
+        do {
+            uid = 1E6 + Math.floor(Math.random() * 9E6);
+        } while (await this.#idExists(uid));
+        let pin = 1000 + Math.floor(Math.random() * 9000);
         
-        // TODO insert data
+        await this.#connection.query(`INSERT INTO users (uid, pin) VALUE (?, ?)`, [uid, pin]);
+        await this.#connection.query(`INSERT INTO responses (uid, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12, q13, q14, q15, q16, q17, q18) VALUE (${uid}, ${results.q1}, ${results.q2}, ${results.q3}, ${results.q4}, ${results.q5}, ${results.q6}, ${results.q7}, ${results.q8}, ${results.q9}, ${results.q10}, ${results.q11}, ${results.q12}, ${results.q13}, ${results.q14}, ${results.q15}, ${results.q16}, ${results.q17}, ${results.q18})`);
 
-        return id;
+        this.#connection.end();
+
+        return {
+            uid: uid,
+            pin: pin
+        }
     }
 
-    /**
-     * 
-     * @param {String} id 
-     * @param {Number} pin
-     * @returns {Promise<SurveyData?>} success
-     */
-    static async get(id, pin) {
-        if (!this.isConnected) return null;
-        if (!(await this.#idExists(id))) return null;
+    static async upload(uid, pin, results) {
+        if (!(await this.#connect())) return;
+        if (!(await this.#isAuth(uid, pin))) return;
+        await this.#connection.query(`INSERT INTO responses (uid, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12, q13, q14, q15, q16, q17, q18) VALUE (${uid}, ${results.q1}, ${results.q2}, ${results.q3}, ${results.q4}, ${results.q5}, ${results.q6}, ${results.q7}, ${results.q8}, ${results.q9}, ${results.q10}, ${results.q11}, ${results.q12}, ${results.q13}, ${results.q14}, ${results.q15}, ${results.q16}, ${results.q17}, ${results.q18})`);
 
-        return null;
+        this.#connection.end();
+
+        return true;
     }
+
+    // /**
+    //  * 
+    //  * @param {String} uid 
+    //  * @param {Number} pin
+    //  * @returns {Promise<SurveyData?>}
+    //  */
+    // static async get(uid, pin) {
+    //     if (!this.#connection) return;
+    //     if (!(await this.#isAuth(uid, pin))) return;
+    //     let res = await this.#connection.query(`SELECT * FROM Responses WHERE uid = ${uid}`);
+    //     delete res.meta;
+    //     return res;
+    // }
 }
 
 module.exports.DB = Database;

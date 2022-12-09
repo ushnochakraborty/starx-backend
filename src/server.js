@@ -17,8 +17,6 @@ const ENDPOINTS = {
 
 /**
  * @typedef {{
- * id: Number
- * questions: {
  * q1: Number,
  * q2: Number,
  * q3: Number,
@@ -37,7 +35,6 @@ const ENDPOINTS = {
  * q16: Number,
  * q17: Number,
  * q18: Number,
- * }
  * }} SurveyData
  */
 
@@ -51,7 +48,9 @@ app.post(`${ENDPOINTS.SURVEY_POST}`, async (req, res) => {
         return;
     }
     let data = req.body.data;
-    let id = await DB.upload(data);
+
+    //TODO
+
     if (!id) {
         res.sendStatus(400);
         return;
@@ -60,15 +59,11 @@ app.post(`${ENDPOINTS.SURVEY_POST}`, async (req, res) => {
 });
 
 // Survey lookup endpoint
-app.get(`${ENDPOINTS.SURVEY_GET}/:id`, async (req, res) => {
-    if (!DB.isConnected) {
-        res.status(503).send("Database error");
-        return;
-    }
-    let id = req.params.id;
+app.get(`${ENDPOINTS.SURVEY_GET}`, async (req, res) => {
+    let uid = req.body.uid;
     let pin = req.body.pin;
-    if (!pin) {
-        res.status(401).send("No pin");
+    if (!uid || !pin) {
+        res.status(401).send("No auth");
         return;
     }
     let data = await DB.get(id, pin);
