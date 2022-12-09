@@ -43,36 +43,44 @@ app.use('/public', express.static('public'));
 
 // Survey post result
 app.post(`${ENDPOINTS.SURVEY_POST}`, async (req, res) => {
-    if (!DB.isConnected) {
+    let data = req.body.data;
+    let uid = req.body.uid;
+    let pin = req.body.pin;
+
+    if (uid && pin) {
+        let status = DB.upload(uid, pin, data);
+        switch (status) {
+            case 'ok': res.status(200).send("Uploaded"); break;
+            case 'auth': res.status(401).send("Unauthorized"); break;
+            case 'db': res.status(503).send("Database error"); break;
+            default: res.status(500).send("Error");
+        }
+        return;
+    }
+
+    let status = DB.uploadNew(data);
+    if (status === 'db') {
         res.status(503).send("Database error");
         return;
     }
-    let data = req.body.data;
-
-    //TODO
-
-    if (!id) {
-        res.sendStatus(400);
-        return;
-    }
-    res.status(201).send(id);
+    res.status(201).send(status);
 });
 
-// Survey lookup endpoint
-app.get(`${ENDPOINTS.SURVEY_GET}`, async (req, res) => {
-    let uid = req.body.uid;
-    let pin = req.body.pin;
-    if (!uid || !pin) {
-        res.status(401).send("No auth");
-        return;
-    }
-    let data = await DB.get(id, pin);
-    if (!data) {
-        res.sendStatus(401);
-        return;
-    }
-    res.status(200).json(data);
-});
+// // Survey lookup endpoint
+// app.get(`${ENDPOINTS.SURVEY_GET}`, async (req, res) => {
+//     let uid = req.body.uid;
+//     let pin = req.body.pin;
+//     if (!uid || !pin) {
+//         res.status(401).send("No auth");
+//         return;
+//     }
+//     let data = await DB.get(id, pin);
+//     if (!data) {
+//         res.sendStatus(401);
+//         return;
+//     }
+//     res.status(200).json(data);
+// });
 
 // Start server
 const PORT = process.env.PORT || 4000;
